@@ -743,7 +743,7 @@ void AudioPlayer_Task(void *parameter) {
 		// Calculate relative position in file (for neopixel) for SD-card-mode
 		if (!gPlayProperties.playlistFinished && !gPlayProperties.isWebstream) {
 			if (millis() % 20 == 0) {   // Keep it simple
-				if (!gPlayProperties.pausePlay) {   // To progress necessary when paused
+				if (!gPlayProperties.pausePlay && (audio->getFileSize() > 0)) {   // To progress necessary when paused
 					gPlayProperties.currentRelPos = ((double)(audio->getFilePos() - audio->inBufferFilled()) / (double)audio->getFileSize()) * 100;
 				}
 			}
@@ -778,6 +778,12 @@ void AudioPlayer_Task(void *parameter) {
 			vTaskDelay(portTICK_PERIOD_MS * 1);
 		}
 		//esp_task_wdt_reset(); // Don't forget to feed the dog!
+
+		#ifdef DONT_ACCEPT_SAME_RFID_TWICE_ENABLE
+			if (gPlayProperties.playlistFinished || gPlayProperties.playMode == NO_PLAYLIST) {
+				strncpy(gOldRfidTagId, "X", cardIdStringSize-1);     // Set old rfid-id to crap in order to allow to re-apply an rfid-tag after playback is finished
+			}
+		#endif
 	}
 	vTaskDelete(NULL);
 }

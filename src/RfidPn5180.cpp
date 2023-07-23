@@ -10,6 +10,7 @@
 #include "Port.h"
 #include <esp_task_wdt.h>
 #include "AudioPlayer.h"
+#include "HallEffectSensor.h"
 
 #ifdef RFID_READER_TYPE_PN5180
 	#include <PN5180.h>
@@ -25,8 +26,9 @@
 
 #define RFID_PN5180_NFC15693_STATE_RESET 3u
 #define RFID_PN5180_NFC15693_STATE_SETUPRF 4u
-#define RFID_PN5180_NFC15693_STATE_DISABLEPRIVACYMODE 5u
-#define RFID_PN5180_NFC15693_STATE_GETINVENTORY 6u
+#define RFID_PN5180_NFC15693_STATE_GETINVENTORY 5u
+#define RFID_PN5180_NFC15693_STATE_DISABLEPRIVACYMODE 6u
+#define RFID_PN5180_NFC15693_STATE_GETINVENTORY_PRIVACY 7u
 #define RFID_PN5180_NFC15693_STATE_ACTIVE 100u
 
 extern unsigned long Rfid_LastRfidCheckTimestamp;
@@ -171,15 +173,21 @@ extern unsigned long Rfid_LastRfidCheckTimestamp;
 				// check for ICODE-SLIX2 password protected tag
 				// put your privacy password here, e.g.:
 				// https://de.ifixit.com/Antworten/Ansehen/513422/nfc+Chips+f%C3%BCr+tonies+kaufen
-				uint8_t password[] = {0x01, 0x02, 0x03, 0x04};
+				//
+				// default factory password for ICODE-SLIX2 is {0x0F, 0x0F, 0x0F, 0x0F}
+				//
+				uint8_t password[] = {0x0F, 0x0F, 0x0F, 0x0F};
 				ISO15693ErrorCode myrc = nfc15693.disablePrivacyMode(password);
 				if (ISO15693_EC_OK == myrc) {
 					if (showDisablePrivacyNotification) {
 						showDisablePrivacyNotification = false;
 						Log_Println((char *) F("disabling privacy-mode successful"), LOGLEVEL_NOTICE);
+					} else {
+						// no privacy mode or disabling failed, skip next steps & restart state machine
+						stateMachine = RFID_PN5180_NFC15693_STATE_GETINVENTORY_PRIVACY;
 					}
 				}
-			} else if (RFID_PN5180_NFC15693_STATE_GETINVENTORY == stateMachine) {
+			} else if ((RFID_PN5180_NFC15693_STATE_GETINVENTORY == stateMachine) || (RFID_PN5180_NFC15693_STATE_GETINVENTORY_PRIVACY == stateMachine)) {
 				// try to read ISO15693 inventory
 				ISO15693ErrorCode rc = nfc15693.getInventory(uid);
 				if (rc == ISO15693_EC_OK) {
@@ -231,6 +239,9 @@ extern unsigned long Rfid_LastRfidCheckTimestamp;
 
 				memcpy(lastCardId, cardId, cardIdSize);
 				showDisablePrivacyNotification = true;
+                #ifdef HALLEFFECT_SENSOR_ENABLE
+                    cardId[cardIdSize-1]   = cardId[cardIdSize-1] + gHallEffectSensor.waitForState(HallEffectWaitMS);  
+                #endif
 
 				#ifdef PAUSE_WHEN_RFID_REMOVED
 					if (memcmp((const void *)lastValidcardId, (const void *)cardId, sizeof(cardId)) == 0) {
@@ -279,7 +290,7 @@ extern unsigned long Rfid_LastRfidCheckTimestamp;
 				stateMachine = RFID_PN5180_NFC15693_STATE_RESET;
 			} else {
 				stateMachine++;
-				if (stateMachine > RFID_PN5180_NFC15693_STATE_GETINVENTORY) {
+				if (stateMachine > RFID_PN5180_NFC15693_STATE_GETINVENTORY_PRIVACY) {
 					stateMachine = RFID_PN5180_NFC14443_STATE_RESET;
 				}
 			}
